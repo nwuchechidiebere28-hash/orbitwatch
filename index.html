@@ -1,0 +1,235 @@
+<!DOCTYPE html><html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ORBITWATCH — Live Satellite Tracker</title><style>
+body {
+  margin:0;
+  font-family: Arial, sans-serif;
+  background:#060810;
+  color:#e2e8f0;
+}
+
+#globeCanvas, #starfield {
+  position:fixed;
+  top:0;
+  left:0;
+}
+
+#globeCanvas {
+  z-index:1;
+}
+
+#starfield {
+  z-index:0;
+}
+
+.sidebar {
+  position:fixed;
+  left:0;
+  top:0;
+  width:260px;
+  height:100%;
+  background:#0d1117;
+  border-right:1px solid #1e2d40;
+  overflow:auto;
+  z-index:2;
+}
+
+.sat-item {
+  padding:10px;
+  border-bottom:1px solid #1e2d40;
+  cursor:pointer;
+}
+
+.sat-item:hover {
+  background:#111827;
+}
+
+.selected {
+  background:#002f3a;
+}
+
+.detail {
+  position:fixed;
+  right:0;
+  top:0;
+  width:260px;
+  height:100%;
+  background:#0d1117;
+  border-left:1px solid #1e2d40;
+  padding:10px;
+  z-index:2;
+}
+
+.topbar {
+  position:fixed;
+  top:0;
+  left:260px;
+  right:260px;
+  height:50px;
+  background:#0d1117;
+  border-bottom:1px solid #1e2d40;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  z-index:2;
+}
+
+</style></head><body><canvas id="starfield"></canvas>
+<canvas id="globeCanvas"></canvas>
+
+<div class="sidebar" id="satList"></div><div class="detail">
+  <h3 id="dName">Satellite</h3>
+  <p>Lat: <span id="dLat"></span></p>
+  <p>Lon: <span id="dLon"></span></p>
+  <p>Alt: <span id="dAlt"></span> km</p>
+</div><div class="topbar">
+  LIVE UTC: <span id="utc"></span>
+</div><script>
+
+// ================= STARFIELD =================
+const sf = document.getElementById('starfield');
+const sctx = sf.getContext('2d');
+
+let stars = [];
+
+function initStars(){
+  sf.width = window.innerWidth;
+  sf.height = window.innerHeight;
+
+  stars = Array.from({length:150}, () => ({
+    x: Math.random()*sf.width,
+    y: Math.random()*sf.height,
+    r: Math.random()*1.5
+  }));
+}
+
+function drawStars(){
+  sctx.clearRect(0,0,sf.width,sf.height);
+  stars.forEach(s=>{
+    sctx.beginPath();
+    sctx.arc(s.x,s.y,s.r,0,Math.PI*2);
+    sctx.fillStyle="white";
+    sctx.fill();
+  });
+}
+
+// ================= DATA =================
+const satellites = [
+ {id:1,name:'ISS',orbit:'LEO',color:'#00d4ff'},
+ {id:2,name:'STARLINK',orbit:'LEO',color:'#00d4ff'},
+ {id:3,name:'GPS',orbit:'MEO',color:'#7c3aed'},
+ {id:4,name:'GOES',orbit:'GEO',color:'#f59e0b'}
+];
+
+let selectedId = 1;
+
+// ================= POSITION =================
+function getPosition(sat, t){
+  const speed = sat.orbit==='LEO'?0.05:
+                sat.orbit==='MEO'?0.02:
+                0.005;
+
+  return {
+    lat: Math.sin(t*speed+sat.id)*60,
+    lon: (t*speed*50+sat.id*30)%360 -180,
+    alt: sat.orbit==='LEO'?400:
+         sat.orbit==='MEO'?20000:
+         35786
+  };
+}
+
+// ================= GLOBE =================
+const gc = document.getElementById('globeCanvas');
+const gctx = gc.getContext('2d');
+
+function resize(){
+  gc.width = window.innerWidth;
+  gc.height = window.innerHeight;
+}
+
+function drawGlobe(t){
+  gctx.clearRect(0,0,gc.width,gc.height);
+
+  const cx = gc.width/2;
+  const cy = gc.height/2;
+
+  // Earth
+  gctx.beginPath();
+  gctx.arc(cx,cy,200,0,Math.PI*2);
+  gctx.fillStyle="#0d1f35";
+  gctx.fill();
+
+  satellites.forEach(sat=>{
+    const p = getPosition(sat,t);
+
+    const x = cx + p.lon*2;
+    const y = cy - p.lat*2;
+
+    gctx.beginPath();
+    gctx.arc(x,y,4,0,Math.PI*2);
+    gctx.fillStyle=sat.color;
+    gctx.fill();
+
+    if(sat.id===selectedId){
+      gctx.beginPath();
+      gctx.arc(x,y,8,0,Math.PI*2);
+      gctx.strokeStyle="white";
+      gctx.stroke();
+    }
+  });
+}
+
+// ================= UI =================
+function renderList(){
+  const el = document.getElementById('satList');
+  el.innerHTML='';
+
+  satellites.forEach(s=>{
+    const d = document.createElement('div');
+    d.className='sat-item'+(s.id===selectedId?' selected':'');
+    d.textContent=s.name;
+
+    d.onclick=()=>{
+      selectedId=s.id;
+      renderList();
+    };
+
+    el.appendChild(d);
+  });
+}
+
+function updateUI(t){
+  const s = satellites.find(x=>x.id===selectedId);
+  const p = getPosition(s,t);
+
+  document.getElementById('dName').textContent=s.name;
+  document.getElementById('dLat').textContent=p.lat.toFixed(2);
+  document.getElementById('dLon').textContent=p.lon.toFixed(2);
+  document.getElementById('dAlt').textContent=p.alt;
+
+  document.getElementById('utc').textContent=new Date().toUTCString();
+}
+
+// ================= LOOP =================
+function loop(t){
+  drawStars();
+  drawGlobe(t/1000);
+  updateUI(t/1000);
+  requestAnimationFrame(loop);
+}
+
+// ================= INIT =================
+initStars();
+resize();
+renderList();
+window.addEventListener('resize',()=>{
+  initStars();
+  resize();
+});
+
+requestAnimationFrame(loop);
+
+</script></body>
+</html>
